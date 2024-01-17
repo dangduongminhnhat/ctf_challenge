@@ -3,9 +3,10 @@ import random
 import string
 import hashlib
 import time
-
 from Crypto.Util.number import inverse, getPrime, bytes_to_long, GCD
 from sympy.ntheory.modular import solve_congruence
+from pwn import *
+import threading
 
 
 # FLAG = open('flag.txt', 'r').read()
@@ -61,19 +62,53 @@ def get_flag(p, q):
 # 	get_clue(p, q, 20)
 # 	get_flag(p, q)
 
-p = 11
-q = 13
+r = remote("mercury.picoctf.net", 48006)
+
+data = r.recvline().decode()
+vals1 = data.split("Enter a string that starts with \"")[1].split("\"")[0]
+vals2 = data.split(f"Enter a string that starts with \"{vals1}\" (no quotes) which creates an md5 hash that ends in these six hex digits: ")[1][:-1]
+print(vals1, vals2)
+
+count = 0
 while True:
-    d_p = random.randint(1, 4)
-    d_q = random.randint(1, q - 1)
-    print("d_p =", d_p, ", d_q =", d_q)
-    if d_p % 2 == d_q % 2:
-        d = CRT(d_p, p - 1, d_q, q - 1)
-        e = inverse(d, (p - 1) * (q - 1))
-        print(d, e)
+    user_input = vals1 + str(count)
+    user_hash = hashlib.md5(user_input.encode()).hexdigest()
+    if user_hash[-6:] == vals2:
         break
-p = getPrime(512)
-q = getPrime(512)
-print(p * q)
-print(p)
-print(q)
+    count += 1
+print(user_input)
+
+r.sendline(user_input.encode())
+n = int(r.recvline().decode().split("Public Modulus :  ")[1], 10)
+e = int(r.recvline().decode().split("Clue :  ")[1], 10)
+print("n =", n)
+print("e =", e)
+
+
+def handle(a, b):
+    print("from", a, "to", b)
+    start = time.time()
+    m = 7516789928765
+    for dp in range(a, b):
+        if (time.time() - start) > (15 * 60):
+            break
+        if dp % 10000 == 0:
+            print(dp // 10000)
+        p = GCD(m - pow(m, e * dp, n), n)
+        if p > 1:
+            break
+    q = n // p
+    if n != p * q:
+        print("Nope")
+        return None
+    ans = p + q
+    print(ans)
+    r.sendline(str(ans).encode())
+
+    print(r.recvline())
+
+
+for i in range(0, 1000000, 50000):
+    thr = threading.Thread(target=handle, args=(i, i + 50000))
+    thr.daemon = False
+    thr.start()
